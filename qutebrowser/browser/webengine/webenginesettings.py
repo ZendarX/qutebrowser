@@ -21,7 +21,8 @@ from qutebrowser.qt.webenginecore import QWebEngineSettings, QWebEngineProfile
 
 from qutebrowser.browser import history
 from qutebrowser.browser.webengine import (spell, webenginequtescheme, cookies,
-                                           webenginedownloads, notification)
+                                           webenginedownloads, notification,
+                                           webextensions)
 from qutebrowser.config import config, websettings
 from qutebrowser.config.websettings import AttributeInfo as Attr
 from qutebrowser.misc import pakjoy
@@ -673,6 +674,7 @@ def init():
     with pakjoy.patch_webengine():
         _init_default_profile()
 
+    webextensions.init(default_profile)
     init_private_profile()
     config.instance.changed.connect(_update_settings)
 
