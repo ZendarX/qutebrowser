@@ -1,0 +1,300 @@
+qutebrowser modernization roadmap
+================================
+:toc:
+
+Purpose
+-------
+
+This fork keeps qutebrowser's keyboard-first design while making it practical as a
+modern daily-driver browser.
+
+The initial goal is *not* to rewrite qutebrowser or to chase complete Chromium
+feature parity. The goal is to remove the highest-impact daily-driver gaps with the
+smallest maintainable changes, then optimize only where profiling shows a real
+benefit.
+
+Guiding principles
+------------------
+
+* Daily-driver capability takes priority over preserving historical limitations.
+* Keyboard-first does not mean feature-poor. Modern browser capabilities should be
+  exposed through qutebrowser-native commands, completion, bindings and internal
+  pages where possible.
+* Prefer incremental integration over large rewrites.
+* Keep Python where it is productive. Move code to Rust or another language only
+  when profiling or isolation clearly justifies it.
+* Keep WebExtensions and native qutebrowser plugins as separate concepts:
+  WebExtensions modify web content, while native plugins should extend browser UI,
+  commands, completion and events.
+* Preserve a practical upstream sync path for as long as that remains useful.
+
+Initial scope
+-------------
+
+The first major workstream is QtWebEngine WebExtension support. QtWebEngine 6.10+
+provides `QWebEngineExtensionManager`, and qutebrowser already accesses
+`QWebEngineProfile.extensionManager()` for the built-in Hangouts extension
+workaround. This makes extension support a realistic incremental feature rather
+than a new browser engine project.
+
+The first proof of concept should answer one question:
+
+----
+Can a small set of important Manifest V3 extensions run reliably enough under
+QtWebEngine to make this fork a daily-driver browser?
+----
+
+The initial compatibility targets should focus on capabilities rather than broad
+extension-store compatibility:
+
+* ad blocking and cosmetic filtering
+* password-manager integration
+* dark-mode/page-style modification
+* SponsorBlock-style page augmentation
+* userscript/page automation support
+
+Milestones
+----------
+
+M0 - Fork baseline
+~~~~~~~~~~~~~~~~~~
+
+Establish the maintenance and compatibility baseline before feature work begins.
+
+* Keep `main` suitable for regular upstream synchronization.
+* Decide and document the minimum supported Python, PyQt and QtWebEngine versions.
+* Initially optimize for Linux development and testing.
+* Prefer Qt 6-only implementation paths in fork-specific features.
+* Keep the upstream test suite green before introducing larger architectural
+  changes.
+* Avoid removing upstream compatibility code until the maintenance benefit is
+  clear and the fork has a stable baseline.
+
+M1 - WebExtensions proof of concept
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Build the smallest qutebrowser-native wrapper around
+`QWebEngineExtensionManager`.
+
+Initial commands:
+
+----
+:extension-list
+:extension-load <path>
+:extension-install <path>
+:extension-enable <id>
+:extension-disable <id>
+:extension-uninstall <id>
+:extension-reload <id>
+----
+
+The proof of concept should verify:
+
+* unpacked Manifest V3 loading
+* installed-extension persistence across restarts
+* enable/disable behavior
+* profile behavior, including private profiles
+* content scripts
+* extension storage
+* background/service-worker behavior
+* `declarativeNetRequest`
+* extension permissions
+* extension actions and popup URLs
+
+A small compatibility test suite should be added with minimal purpose-built MV3
+extensions so failures can be attributed to specific APIs rather than to large
+third-party extensions.
+
+M2 - Daily-driver extension compatibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Test a deliberately small set of real extensions and document the supported API
+surface.
+
+Priority order:
+
+. ad/content blocker with cosmetic filtering
+. password manager
+. dark-mode extension
+. SponsorBlock-style extension
+. userscript manager or equivalent page automation
+
+The objective is not universal Chrome-extension compatibility. The objective is a
+stable compatibility set that covers the most important daily-driver needs.
+
+For each extension, document:
+
+* required WebExtension APIs
+* known QtWebEngine limitations
+* qutebrowser integration requirements
+* whether an extension action/popup is required
+* persistence and permission behavior
+* known crashes or regressions by QtWebEngine version
+
+M3 - qutebrowser-native extension UX
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Do not add a Chromium-style toolbar unless technically unavoidable. Prefer
+qutebrowser-native interaction.
+
+Planned UX:
+
+* command completion for installed extensions
+* `:extension-action <id-or-name>`
+* optional key bindings for extension actions
+* popup rendering when an extension exposes an action popup
+* a `qute://extensions/` management page
+* clear permission and error reporting
+* per-profile extension state where QtWebEngine supports it safely
+
+The UX should make extensions feel like qutebrowser features rather than embedded
+Chromium UI.
+
+M4 - Native content blocking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Even if WebExtensions provide a usable blocker, native blocking remains valuable
+for performance, reliability and keyboard-native control.
+
+Investigate extending the existing blocking stack with:
+
+* cosmetic element hiding
+* scriptlet support where feasible
+* per-site filtering controls
+* element-picker workflow using qutebrowser hints
+* local user filter rules
+
+A future element picker should ideally allow a user to select a page element with
+qutebrowser's hinting system and generate a persistent cosmetic rule.
+
+M5 - Daily-driver gaps
+~~~~~~~~~~~~~~~~~~~~~~
+
+After extension support is proven, prioritize remaining gaps that materially block
+regular browser use.
+
+Candidate areas:
+
+* profile and identity handling
+* downloads
+* media and DRM behavior
+* notifications and permissions
+* browser/site compatibility quirks
+* credential-management integration
+* external protocol handling
+* per-site controls
+
+Each area should be driven by reproducible daily-driver problems rather than by a
+generic browser feature checklist.
+
+M6 - Performance baseline
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before rewriting Python code, establish benchmarks and profile real workloads.
+
+Measure at least:
+
+* cold and warm startup
+* session restoration
+* history search
+* URL completion
+* large completion models
+* tab creation and switching
+* hint generation
+* configuration loading
+* blocking-rule loading and updates
+* Python CPU time versus QtWebEngine process CPU time
+* browser-process and renderer memory separately
+
+Store repeatable benchmark procedures in the repository so performance changes can
+be compared rather than judged subjectively.
+
+M7 - Rust core for measured hot paths
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Introduce Rust only after M6 identifies worthwhile targets.
+
+Preferred integration model:
+
+----
+Python / PyQt UI and orchestration
+            |
+           PyO3
+            |
+Rust implementation modules
+            |
+      QtWebEngine / Chromium
+----
+
+Potential candidates include indexing, search, parsing, filtering or persistence
+workloads where benchmarks show Python overhead is material.
+
+Rules for migration:
+
+* every migration needs a before/after benchmark
+* keep the Python-facing API narrow
+* avoid moving Qt object ownership across the language boundary unless necessary
+* do not rewrite code solely because it is written in Python
+
+M8 - Native plugin API
+~~~~~~~~~~~~~~~~~~~~~~
+
+Design a browser-level extension API separately from WebExtensions.
+
+A future native plugin API could expose stable hooks for:
+
+* commands
+* completion
+* tabs and navigation events
+* downloads
+* browser UI
+* configuration
+* page lifecycle events
+
+Prefer a small, versioned API surface. Consider out-of-process or RPC-based plugins
+if that provides better fault isolation and compatibility than importing internal
+qutebrowser modules directly.
+
+Near-term implementation order
+------------------------------
+
+The recommended first implementation sequence is:
+
+. Add a small wrapper around `QWebEngineExtensionManager`.
+. Add `:extension-list` and unpacked `:extension-load`.
+. Add a minimal MV3 compatibility test extension.
+. Verify content scripts, storage and extension lifecycle.
+. Test `declarativeNetRequest` and a real ad-blocking extension.
+. Add enable/disable/install persistence.
+. Add qutebrowser-native extension actions and popup handling.
+. Decide whether cosmetic filtering is sufficiently solved by extensions or still
+  needs immediate native implementation.
+. Only after daily-driver capability improves, begin performance profiling.
+
+Non-goals for the first stages
+------------------------------
+
+The following are explicitly not initial goals:
+
+* rewriting qutebrowser in Rust
+* replacing QtWebEngine/Chromium
+* full Chrome Web Store compatibility
+* supporting every historical Qt/Python combination in new fork-only features
+* building a Chromium-style toolbar and settings UI
+* speculative Python-to-Rust migration without benchmarks
+
+Success criteria
+----------------
+
+The first roadmap phase is successful when the fork can be used as a normal daily
+browser with:
+
+* reliable cosmetic/content blocking
+* at least one viable credential-management workflow
+* stable support for a small documented set of MV3 extension capabilities
+* qutebrowser-native control over installed extensions
+* no significant regression in core keyboard-driven workflows
+* a repeatable upstream synchronization and test process
+
+At that point, the roadmap can move from capability recovery to performance,
+plugin architecture and deeper modernization.
